@@ -1,0 +1,18 @@
+# Copy to terraform.tfvars (git-ignored) - or let scripts/00-preflight.sh generate it.
+
+project_id        = "sector9-airis-xxxxxx"     # from the client
+allowed_ssh_cidrs = ["203.0.113.7/32"]          # site egress IP: curl -4 ifconfig.me
+
+# Placement (confirm data-residency requirements with the client)
+region = "me-west1"
+zone   = "me-west1-a"
+
+# Access model - flip these if org policies require it (see docs/troubleshooting.md)
+bastion_public_ip = true  # false => no public IP, SSH via IAP
+enable_oslogin    = false # true  => SSH tied to IAM (OS Login)
+
+ssh_user            = "fde"
+ssh_public_key_path = "~/.ssh/airis_fde.pub"
+
+# Pinned versions
+k3s_version = "v1.35.7+k3s1"

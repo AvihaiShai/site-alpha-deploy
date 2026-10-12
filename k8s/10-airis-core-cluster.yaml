@@ -1,0 +1,92 @@
+# Airis Core - phase 1 data layer.
+# CloudNativePG turns this one declarative object into: 3 Postgres pods (1 primary,
+# 2 streaming replicas), their volumes, TLS certificates, users, services and
+# automated failover.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: airis-core
+  namespace: airis
+  labels:
+    app.kubernetes.io/part-of: airis-core
+spec:
+  description: "Airis Core - phase 1 data layer (Site Alpha)"
+
+  # 1 primary + 2 replicas. On ONE node this protects against process/pod failure
+  # and lets us demonstrate failover. Node/zone failure needs phase 2 (more nodes).
+  instances: 3
+
+  # Pinned image = the default image of operator 1.30.1 (PostgreSQL 18.6).
+  # Production: pin by digest (@sha256:...) or use an ImageCatalog.
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie
+
+  # Operator restarts/upgrades replicas first, then switches over the primary.
+  primaryUpdateStrategy: unsupervised
+
+  # No remote 'postgres' superuser login. Admin access = kubectl exec through the
+  # Kubernetes API (authenticated, RBAC, audited).
+  enableSuperuserAccess: false
+
+  bootstrap:
+    initdb:
+      database: airis
+      owner: airis          # app user; password generated into Secret airis-core-app
+      dataChecksums: true   # detect silent storage corruption
+
+  postgresql:
+    parameters:
+      # Sized for a 1 GiB container (see docs/db-sizing.md):
+      shared_buffers: "256MB"         # ~25% of the memory limit
+      effective_cache_size: "768MB"   # planner hint: ~75% of the memory limit
+      work_mem: "4MB"                 # per sort/hash operation, per connection
+      maintenance_work_mem: "64MB"
+      max_connections: "100"          # many clients => add a Pooler (PgBouncer), don't raise this
+      log_min_duration_statement: "1000"  # log queries slower than 1s
+    pg_hba:
+      # TLS-only: any connection attempt without TLS is rejected outright.
+      # (CNPG inserts these lines before its default "host all all all scram-sha-256".)
+      # NOTE: match 'all' addresses - kubectl port-forward traffic arrives from 127.0.0.1
+      # inside the pod, so a 10.42.0.0/16 rule would silently break the approved path.
+      - hostnossl all all all reject
+      - hostssl all all all scram-sha-256
+
+  storage:
+    storageClass: local-path   # K3s built-in; data lives on the node's disk
+    size: 10Gi                 # local-path does NOT enforce this size - monitor disk usage
+  walStorage:
+    storageClass: local-path   # separate volume: a WAL burst can't fill the data volume
+    size: 4Gi
+
+  # requests == limits -> "Guaranteed" QoS: the last pods Kubernetes would evict.
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "500m"
+      memory: "1Gi"
+
+  affinity:
+    enablePodAntiAffinity: true
+    topologyKey: kubernetes.io/hostname
+    # 'preferred' lets all 3 run on our single node. Phase 2 with 3+ nodes: 'required',
+    # so no two instances ever share a node.
+    podAntiAffinityType: preferred
+
+  # Phase 2 (multi-node): quorum synchronous replication -> RPO 0 for committed data.
+  # postgresql:
+  #   synchronous:
+  #     method: any
+  #     number: 1
+  #     dataDurability: required
+
+  # Phase 2: backups + WAL archiving to GCS with the Barman Cloud plugin
+  # (in-tree barmanObjectStore is deprecated, removed in CNPG 1.31).
+  # plugins:
+  #   - name: barman-cloud.cloudnative-pg.io
+  #     isWALArchiver: true
+  #     parameters:
+  #       barmanObjectName: airis-core-gcs
+
+  # Monitoring: every instance exposes Prometheus metrics on :9187. Phase 2 scrapes them
+  # with a PodMonitor created separately (spec.monitoring.enablePodMonitor is deprecated in 1.30).

@@ -1,0 +1,12 @@
+# Values for the cloudnative-pg chart (operator only - the Postgres cluster itself
+# is a separate, reviewable manifest in k8s/).
+# Kept deliberately small: every value here is one I can explain.
+
+replicaCount: 1   # phase 1: one node. Phase 2: 2 replicas (leader election) on separate nodes.
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 256Mi  # memory limit to contain leaks; no CPU limit (avoid throttling the reconciler)

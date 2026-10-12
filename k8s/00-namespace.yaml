@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: airis
+  labels:
+    app.kubernetes.io/part-of: airis-core
+    # Pod Security Admission (built into Kubernetes):
+    #  enforce=baseline  -> blocks privileged pods, hostPath, hostNetwork, hostPort ...
+    #  warn/audit=restricted -> reports anything that would fail the strictest profile
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/audit: restricted

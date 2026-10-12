@@ -1,0 +1,50 @@
+# Least-privilege identity for the handover validator.
+# It can READ the cluster status and services, read ONE secret (the app
+# credentials), read the PUBLIC CA certificate, and open a port-forward.
+# It cannot list secrets, read the CA private key, exec into pods, or change anything.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: airis-validator
+  namespace: airis
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: airis-validator
+  namespace: airis
+rules:
+  - apiGroups: ["postgresql.cnpg.io"]
+    resources: ["clusters"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods", "services", "endpoints"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["airis-core-app"]   # this one secret only
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["airis-core-ca-public"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["pods/portforward"]
+    verbs: ["get", "create"]   # kubectl 1.35 tries WebSocket (get) before SPDY (create)
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies"]
+    verbs: ["list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: airis-validator
+  namespace: airis
+subjects:
+  - kind: ServiceAccount
+    name: airis-validator
+    namespace: airis
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: airis-validator

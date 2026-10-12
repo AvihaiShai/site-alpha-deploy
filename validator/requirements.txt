@@ -1,0 +1,2 @@
+# One dependency, pinned. psycopg 3 with its bundled libpq + OpenSSL (TLS 1.3).
+psycopg[binary]==3.3.6

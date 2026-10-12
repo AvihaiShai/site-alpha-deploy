@@ -1,0 +1,67 @@
+# OPTIONAL - apply only after the cluster is healthy and the validator passed.
+#   kubectl apply -f k8s/optional/20-networkpolicy.yaml
+#   kubectl -n airis get pods -w            # all must stay READY 1/1
+#   ROLLBACK: kubectl delete -f k8s/optional/20-networkpolicy.yaml
+#
+# Pod-level micro-segmentation inside the cluster (K3s enforces NetworkPolicy
+# with its embedded kube-router controller). Note: kubectl port-forward enters the
+# pod's own network namespace, so the validator path is governed by RBAC, not by
+# these rules.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: airis
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress"]
+---
+# Postgres between the instances (streaming replication) and from app pods
+# in the same namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: airis-core-allow-in-namespace
+  namespace: airis
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: airis-core
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 5432
+    # instance <-> instance on the instance manager port (primary-isolation liveness check)
+    - from:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: airis-core
+      ports:
+        - protocol: TCP
+          port: 8000
+---
+# The CNPG operator manages instances through the instance manager (8000)
+# and Postgres (5432).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: airis-core-allow-operator
+  namespace: airis
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: airis-core
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cnpg-system
+      ports:
+        - protocol: TCP
+          port: 8000
+        - protocol: TCP
+          port: 5432
